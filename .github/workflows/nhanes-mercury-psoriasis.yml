@@ -1,0 +1,41 @@
+name: NHANES mercury psoriasis research
+
+on:
+  push:
+    branches:
+      - research/nhanes-mercury-psoriasis-2026
+    paths:
+      - 'research/nhanes_mercury_psoriasis/**'
+      - '.github/workflows/nhanes-mercury-psoriasis.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out research branch
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install inspection dependencies
+        run: python -m pip install --upgrade pip pandas pyarrow requests
+
+      - name: Inspect public NHANES source tables
+        run: python research/nhanes_mercury_psoriasis/inspect_nhanes.py
+
+      - name: Upload inspection artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nhanes-source-inspection
+          path: artifacts/inspection
+          if-no-files-found: error
+          retention-days: 14
