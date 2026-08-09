@@ -13,9 +13,27 @@ import pandas as pd
 import requests
 
 YEARS = {
-    2021: {"person": "h233", "conditions": "h231", "office": "h229g", "outpatient": "h229f", "link": "h229i"},
-    2022: {"person": "h243", "conditions": "h241", "office": "h239g", "outpatient": "h239f", "link": "h239i"},
-    2023: {"person": "h251", "conditions": "h249", "office": "h248g", "outpatient": "h248f", "link": "h248i"},
+    2021: {
+        "person": ("h233", "h233"),
+        "conditions": ("h231", "h231"),
+        "office": ("h229g", "h229g"),
+        "outpatient": ("h229f", "h229f"),
+        "link": ("h229i", "h229if1"),
+    },
+    2022: {
+        "person": ("h243", "h243"),
+        "conditions": ("h241", "h241"),
+        "office": ("h239g", "h239g"),
+        "outpatient": ("h239f", "h239f"),
+        "link": ("h239i", "h239if1"),
+    },
+    2023: {
+        "person": ("h251", "h251"),
+        "conditions": ("h249", "h249"),
+        "office": ("h248g", "h248g"),
+        "outpatient": ("h248f", "h248f"),
+        "link": ("h248i", "h248if1"),
+    },
 }
 BASE = "https://meps.ahrq.gov/mepsweb/data_files/pufs"
 KEYWORDS = (
@@ -57,13 +75,13 @@ def main() -> None:
     inventory: dict[str, Any] = {"source": BASE, "files": {}}
 
     for year, files in YEARS.items():
-        for role, stem in files.items():
-            url = f"{BASE}/{stem}/{stem}dta.zip"
-            zip_path = raw / f"{stem}dta.zip"
+        for role, (directory_stem, file_stem) in files.items():
+            url = f"{BASE}/{directory_stem}/{file_stem}dta.zip"
+            zip_path = raw / f"{file_stem}dta.zip"
             response = session.get(url, timeout=180)
             response.raise_for_status()
             zip_path.write_bytes(response.content)
-            extract_dir = raw / stem
+            extract_dir = raw / file_stem
             extract_dir.mkdir(exist_ok=True)
             with zipfile.ZipFile(zip_path) as archive:
                 archive.extractall(extract_dir)
@@ -87,7 +105,8 @@ def main() -> None:
             inventory["files"][key] = {
                 "year": year,
                 "role": role,
-                "stem": stem,
+                "directory_stem": directory_stem,
+                "file_stem": file_stem,
                 "url": url,
                 "zip_bytes": zip_path.stat().st_size,
                 "zip_sha256": sha256(zip_path),
