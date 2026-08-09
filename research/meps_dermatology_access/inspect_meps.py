@@ -25,14 +25,14 @@ YEARS = {
         "conditions": ("h241", "h241"),
         "office": ("h239g", "h239g"),
         "outpatient": ("h239f", "h239f"),
-        "link": ("h239i", "h239if1"),
+        "link": ("h239i", "h239i"),
     },
     2023: {
         "person": ("h251", "h251"),
         "conditions": ("h249", "h249"),
         "office": ("h248g", "h248g"),
         "outpatient": ("h248f", "h248f"),
-        "link": ("h248i", "h248if1"),
+        "link": ("h248i", "h248i"),
     },
 }
 BASE = "https://meps.ahrq.gov/mepsweb/data_files/pufs"
@@ -81,7 +81,7 @@ def main() -> None:
             response = session.get(url, timeout=180)
             response.raise_for_status()
             zip_path.write_bytes(response.content)
-            extract_dir = raw / file_stem
+            extract_dir = raw / f"{year}_{role}_{file_stem}"
             extract_dir.mkdir(exist_ok=True)
             with zipfile.ZipFile(zip_path) as archive:
                 archive.extractall(extract_dir)
