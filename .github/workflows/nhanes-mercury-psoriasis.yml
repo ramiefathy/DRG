@@ -25,8 +25,8 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install inspection dependencies
-        run: python -m pip install --upgrade pip pandas pyarrow requests openpyxl xlrd
+      - name: Install research dependencies
+        run: python -m pip install --upgrade pip pandas numpy scipy statsmodels patsy pyarrow requests openpyxl xlrd matplotlib
 
       - name: Inspect public NHANES source tables
         run: python research/nhanes_mercury_psoriasis/inspect_nhanes.py
@@ -34,7 +34,10 @@ jobs:
       - name: Inspect published supplementary files
         run: python research/nhanes_mercury_psoriasis/inspect_supplement.py
 
-      - name: Upload inspection artifact
+      - name: Prepare survey-design-enriched analysis data
+        run: python research/nhanes_mercury_psoriasis/prepare_enriched.py
+
+      - name: Upload research artifact
         uses: actions/upload-artifact@v4
         with:
           name: nhanes-source-inspection
