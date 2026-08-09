@@ -13,9 +13,9 @@ permissions:
   contents: read
 
 jobs:
-  inspect:
+  study:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Check out research branch
         uses: actions/checkout@v4
@@ -25,8 +25,15 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Install research dependencies
-        run: python -m pip install --upgrade pip pandas numpy scipy statsmodels patsy pyarrow requests openpyxl xlrd matplotlib
+      - name: Install Python research dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r research/nhanes_mercury_psoriasis/requirements.txt
+
+      - name: Install R survey reference implementation
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y r-base r-cran-survey
 
       - name: Inspect public NHANES source tables
         run: python research/nhanes_mercury_psoriasis/inspect_nhanes.py
@@ -37,10 +44,75 @@ jobs:
       - name: Prepare survey-design-enriched analysis data
         run: python research/nhanes_mercury_psoriasis/prepare_enriched.py
 
-      - name: Upload research artifact
+      - name: Run complete reproducibility and robustness analysis
+        run: |
+          python research/nhanes_mercury_psoriasis/analysis.py \
+            --input artifacts/prepared/enriched_analysis_data.tsv \
+            --output artifacts/final_study
+          cp artifacts/prepared/preparation_checks.json artifacts/final_study/provenance/source_preparation_checks.json
+          cp artifacts/inspection/inspection.json artifacts/final_study/provenance/source_table_inventory.json
+          cp artifacts/supplement/inventory.json artifacts/final_study/provenance/supplement_inventory.json
+
+      - name: Cross-check survey estimates in R
+        run: |
+          Rscript research/nhanes_mercury_psoriasis/survey_crosscheck.R \
+            artifacts/prepared/enriched_analysis_data.tsv \
+            artifacts/final_study/provenance/r_survey_crosscheck.csv
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          import pandas as pd
+
+          final = Path('artifacts/final_study')
+          py = pd.read_csv(final / 'results/model_summary_all.csv')
+          r = pd.read_csv(final / 'provenance/r_survey_crosscheck.csv')
+          target = {
+              'S1_crude_survey_raw': 'mercury',
+              'S2_model2_survey_raw': 'mercury',
+              'S3_model2_survey_log2': 'log2_mercury',
+              'S4_parsimonious_cc_survey_log2': 'log2_mercury',
+          }
+          rows = []
+          for model_id, term in target.items():
+              p = py.loc[py.model_id.eq(model_id)].iloc[0]
+              rr = r.loc[r.model_id.eq(model_id) & r.term.eq(term)].iloc[0]
+              rows.append({
+                  'model_id': model_id,
+                  'term': term,
+                  'beta_python': p.beta,
+                  'beta_r_survey': rr.beta_r_survey,
+                  'absolute_beta_difference': abs(p.beta - rr.beta_r_survey),
+                  'se_python': p.se,
+                  'se_r_survey': rr.se_r_survey,
+                  'absolute_se_difference': abs(p.se - rr.se_r_survey),
+              })
+          out = pd.DataFrame(rows)
+          out.to_csv(final / 'provenance/r_python_survey_crosscheck.csv', index=False)
+          summary = {
+              'max_absolute_beta_difference': float(out.absolute_beta_difference.max()),
+              'max_absolute_se_difference': float(out.absolute_se_difference.max()),
+          }
+          (final / 'provenance/r_python_survey_crosscheck.json').write_text(
+              json.dumps(summary, indent=2, sort_keys=True), encoding='utf-8'
+          )
+          print(out.to_string(index=False))
+          print(json.dumps(summary, indent=2))
+          PY
+
+      - name: Verify no participant-level data in final artifact
+        run: |
+          if find artifacts/final_study -type f \( -name '*.tsv' -o -name '*.parquet' -o -name '*.xls' -o -name '*.xlsx' \) | grep -q .; then
+            echo 'Participant-level or source data found in final artifact' >&2
+            exit 1
+          fi
+          test -f artifacts/final_study/REPORT.md
+          test -f artifacts/final_study/REPORT.html
+          test -f artifacts/final_study/provenance/verification_checks.json
+
+      - name: Upload completed study
         uses: actions/upload-artifact@v4
         with:
-          name: nhanes-source-inspection
-          path: artifacts
+          name: nhanes-mercury-psoriasis-completed-study
+          path: artifacts/final_study
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
