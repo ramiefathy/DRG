@@ -1,0 +1,69 @@
+name: HROCT data staging
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  download:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Download exact HROCT-Bench subsets
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'huggingface_hub>=0.34,<2'
+          python - <<'PY'
+          from pathlib import Path
+          from huggingface_hub import hf_hub_download
+          import hashlib, json, shutil, zipfile
+
+          repo_id = 'Hal1010/HROCT-Bench'
+          filenames = [
+              'HC_MS/npz.zip',
+              'HC_MS/splits.csv',
+              'HC_MS/names.txt',
+              'DUKE DME/npz.zip',
+              'DUKE DME/splits.csv',
+              'DUKE DME/names.txt',
+          ]
+          out = Path('hroct_data')
+          out.mkdir(exist_ok=True)
+          records = []
+          for filename in filenames:
+              src = Path(hf_hub_download(repo_id=repo_id, filename=filename, repo_type='dataset'))
+              stem = filename.replace(' ', '_').replace('/', '__')
+              dst = out / stem
+              shutil.copy2(src, dst)
+              digest = hashlib.sha256(dst.read_bytes()).hexdigest()
+              record = {'repo_id': repo_id, 'filename': filename, 'local_name': dst.name, 'size_bytes': dst.stat().st_size, 'sha256': digest}
+              if dst.suffix == '.zip':
+                  with zipfile.ZipFile(dst) as zf:
+                      bad = zf.testzip()
+                      record['zip_members'] = len(zf.infolist())
+                      record['zip_test'] = 'ok' if bad is None else f'bad:{bad}'
+                      if bad is not None:
+                          raise RuntimeError(f'Corrupt ZIP {dst}: {bad}')
+              records.append(record)
+          (out / 'PROVENANCE.json').write_text(json.dumps({'source_revision': 'main', 'files': records}, indent=2) + '\n')
+          print(json.dumps(records, indent=2))
+          PY
+          ls -lh hroct_data
+      - name: Upload HROCT data artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hroct-data
+          path: hroct_data/
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
